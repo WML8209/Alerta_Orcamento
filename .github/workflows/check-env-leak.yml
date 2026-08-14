@@ -1,0 +1,34 @@
+name: Bloquear vazamento do .env
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  check-env:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Falha se .env estiver versionado no HEAD
+        run: |
+          if git ls-files | grep -E '(^|/)\.env$'; then
+            echo "::error::.env encontrado versionado no repositório. Remova-o e reescreva o histórico."
+            exit 1
+          fi
+          echo "OK: nenhum .env versionado no HEAD."
+
+      - name: Falha se .env foi adicionado em algum commit deste push
+        if: github.event_name == 'push'
+        run: |
+          range="${{ github.event.before }}..${{ github.sha }}"
+          if [ "${{ github.event.before }}" = "0000000000000000000000000000000000000000" ]; then
+            range="${{ github.sha }}"
+          fi
+          if git log --diff-filter=A --name-only --pretty=format: "$range" | grep -E '(^|/)\.env$'; then
+            echo "::error::.env foi adicionado em algum commit deste push, mesmo que removido depois. Reescreva o histórico e rotacione as credenciais."
+            exit 1
+          fi
+          echo "OK: nenhum .env adicionado no histórico deste push."
