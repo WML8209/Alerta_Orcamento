@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# Bloqueia o commit se o .env (segredos) estiver staged, mesmo que
+# alguém force `git add -f .env` por engano.
+set -euo pipefail
+
+leaked=$(git diff --cached --name-only --diff-filter=ACM | grep -E '(^|/)\.env$' || true)
+
+if [ -n "$leaked" ]; then
+  echo "COMMIT BLOQUEADO: o(s) arquivo(s) abaixo contêm segredos e não podem ser commitados:"
+  echo "$leaked"
+  echo
+  echo "Remova do stage com: git restore --staged <arquivo>"
+  exit 1
+fi
