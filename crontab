@@ -1,0 +1,2 @@
+0 9 * * * root cd /app && . /app/env.sh 2>/dev/null; /usr/local/bin/python3 /app/cfc_orcamento.py --alertar >> /var/log/cron.log 2>&1
+
