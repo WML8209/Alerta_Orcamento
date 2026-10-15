@@ -1,24 +1,27 @@
 #!/usr/bin/env python3
-"""Cliente para a API de Dados Abertos do Orçamento do CFC, com alerta via WhatsApp
-(Z-API) quando o valor realizado se aproxima do orçado.
+"""Cliente para a API de Dados Abertos do Orçamento do CFC, com alerta por e-mail
+(SMTP) quando o valor realizado se aproxima do orçado.
 
 Variáveis de ambiente necessárias para o alerta:
-    ZAPI_INSTANCE_ID   - ID da instância Z-API
-    ZAPI_TOKEN         - Token da instância Z-API
-    ZAPI_CLIENT_TOKEN  - (opcional) Client-Token de segurança da conta Z-API
-    ZAPI_TO            - Número(s) destino, separados por vírgula, sem "+" e sem espaços
-                          ex: 5561999999999,5511988888888
+    SMTP_HOST      - Servidor SMTP (ex: smtp.gmail.com)
+    SMTP_PORT      - (opcional) Porta SMTP (padrão: 587 com STARTTLS; 465 usa SSL)
+    SMTP_USER      - Usuário de autenticação SMTP
+    SMTP_PASSWORD  - Senha (ou senha de app) SMTP
+    EMAIL_FROM     - (opcional) Remetente (padrão: SMTP_USER)
+    EMAIL_TO       - Destinatário(s), separados por vírgula
+                      ex: fulano@exemplo.com,ciclano@exemplo.com
 """
 
 import argparse
 import json
 import os
+import smtplib
 import sys
+from email.message import EmailMessage
 
 import requests
 
 API_URL = "https://www3.cfc.org.br/spw/API_SPW/dadosAbertos/orcamento"
-ZAPI_URL_TEMPLATE = "https://api.z-api.io/instances/{instance}/token/{token}/send-text"
 
 CONTAS_PADRAO = [
     "6.3.1.3.02.03.001",
@@ -67,23 +70,30 @@ def verificar_alertas(linhas: list[dict], limite: float) -> list[dict]:
     return alertas
 
 
-def enviar_whatsapp(mensagem: str) -> None:
-    """Envia uma mensagem via Z-API para um ou mais destinatários."""
-    instance = os.environ["ZAPI_INSTANCE_ID"]
-    token = os.environ["ZAPI_TOKEN"]
-    client_token = os.environ.get("ZAPI_CLIENT_TOKEN", "").strip()
-    destinatarios = [d.strip() for d in os.environ["ZAPI_TO"].split(",") if d.strip()]
+def enviar_email(assunto: str, mensagem: str) -> None:
+    """Envia o alerta por e-mail via SMTP para um ou mais destinatários."""
+    host = os.environ["SMTP_HOST"].strip()
+    porta = int(os.environ.get("SMTP_PORT", "587"))
+    usuario = os.environ["SMTP_USER"].strip()
+    senha = os.environ["SMTP_PASSWORD"].strip()
+    remetente = os.environ.get("EMAIL_FROM", "").strip() or usuario
+    destinatarios = [d.strip() for d in os.environ["EMAIL_TO"].split(",") if d.strip()]
 
-    headers = {"Client-Token": client_token} if client_token else {}
+    msg = EmailMessage()
+    msg["Subject"] = assunto
+    msg["From"] = remetente
+    msg["To"] = ", ".join(destinatarios)
+    msg.set_content(mensagem)
 
-    for destinatario in destinatarios:
-        resp = requests.post(
-            ZAPI_URL_TEMPLATE.format(instance=instance, token=token),
-            headers=headers,
-            json={"phone": destinatario, "message": mensagem},
-            timeout=30,
-        )
-        resp.raise_for_status()
+    if porta == 465:
+        with smtplib.SMTP_SSL(host, porta, timeout=30) as smtp:
+            smtp.login(usuario, senha)
+            smtp.send_message(msg)
+    else:
+        with smtplib.SMTP(host, porta, timeout=30) as smtp:
+            smtp.starttls()
+            smtp.login(usuario, senha)
+            smtp.send_message(msg)
 
 
 def formatar_valor_brl(valor: float) -> str:
@@ -118,7 +128,7 @@ def main() -> None:
         default=LIMITE_ALERTA_PADRAO,
         help=f"Folga (R$) abaixo da qual dispara alerta (padrão: {LIMITE_ALERTA_PADRAO:,.2f})",
     )
-    parser.add_argument("--alertar", action="store_true", help="Envia alerta via WhatsApp quando houver contas no limite")
+    parser.add_argument("--alertar", action="store_true", help="Envia alerta por e-mail quando houver contas no limite")
     parser.add_argument("-o", "--output", help="Arquivo de saída (padrão: stdout)")
     args = parser.parse_args()
 
@@ -137,8 +147,8 @@ def main() -> None:
         alertas = verificar_alertas(linhas, args.limite_alerta)
         if alertas:
             mensagem = montar_mensagem_alerta(alertas, args.ano)
-            enviar_whatsapp(mensagem)
-            print(f"Alerta enviado via WhatsApp para {len(alertas)} conta(s).", file=sys.stderr)
+            enviar_email(f"Alerta orçamentário CFC {args.ano}", mensagem)
+            print(f"Alerta enviado por e-mail para {len(alertas)} conta(s).", file=sys.stderr)
         else:
             print("Nenhuma conta dentro do limite de alerta.", file=sys.stderr)
 

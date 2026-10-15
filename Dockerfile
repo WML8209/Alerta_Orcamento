@@ -13,7 +13,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY cfc_orcamento.py .
 COPY crontab /etc/cron.d/cfc-orcamento
-RUN chmod 0644 /etc/cron.d/cfc-orcamento && crontab /etc/cron.d/cfc-orcamento
+RUN chmod 0644 /etc/cron.d/cfc-orcamento
 
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
